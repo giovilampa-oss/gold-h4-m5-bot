@@ -13,7 +13,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Gold Scalper Bot (5M Liquidity Sweep + EMA Filter) is running live!"
+    return "Gold Scalper Bot PRO (5M Advanced) is running live!"
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
@@ -32,6 +32,7 @@ LOOKBACK = 12               # Candele per identificare il range recente
 CHECK_INTERVAL = 60         # Controllo ogni 60 secondi
 
 last_signal_time = None
+active_trades = []          # Monitoraggio trade attivi
 
 # --------------------------------------------------
 # FUNZIONI DI SUPPORTO
@@ -61,11 +62,102 @@ def get_market_data():
         print(f"Errore Twelve Data: {e}")
     return None
 
+def is_trading_hours(rome_dt):
+    """Filtro Orario: Opera dalle 08:00 alle 22:00 (Ora Italiana)"""
+    return 8 <= rome_dt.hour < 22
+
+# --------------------------------------------------
+# THREAD: MONITORAGGIO WIN / LOSS / BREAK-EVEN
+# --------------------------------------------------
+def monitor_active_trades():
+    global active_trades
+    while True:
+        try:
+            if active_trades:
+                candles = get_market_data()
+                if candles and len(candles) > 0:
+                    current_price = float(candles[-1]['close'])
+                    trades_to_remove = []
+                    
+                    for trade in active_trades:
+                        # Controllo LONG
+                        if trade['type'] == 'LONG':
+                            # Requisito Break-Even (R : R = 1 : 1)
+                            if not trade['be_notified'] and current_price >= (trade['entry'] + trade['risk']):
+                                send_telegram_message(
+                                    f"🛡️ **AGGIORNAMENTO TRADE LONG ({SYMBOL})**\n\n"
+                                    f"Il prezzo ha raggiunto +1R (`{current_price}`)!\n"
+                                    f"💡 **Consiglio:** Sposta lo Stop Loss a B/E (Break-Even) a `{trade['entry']}` per azzerare il rischio!"
+                                )
+                                trade['be_notified'] = True
+
+                            # Take Profit
+                            if current_price >= trade['tp']:
+                                send_telegram_message(
+                                    f"🎉 **TAKE PROFIT COLPITO! (WIN)** 🎉\n\n"
+                                    f"🌐 **Strumento:** {SYMBOL}\n"
+                                    f"📊 **Tipo:** LONG\n"
+                                    f"🎯 **Profit Target:** `{trade['tp']}`\n"
+                                    f"🚀 **Esito:** Operazione chiusa in PROFITTO!"
+                                )
+                                trades_to_remove.append(trade)
+
+                            # Stop Loss
+                            elif current_price <= trade['sl']:
+                                send_telegram_message(
+                                    f"🛑 **STOP LOSS COLPITO (LOSS)** 🛑\n\n"
+                                    f"🌐 **Strumento:** {SYMBOL}\n"
+                                    f"📊 **Tipo:** LONG\n"
+                                    f"🛑 **Prezzo Uscita:** `{trade['sl']}`"
+                                )
+                                trades_to_remove.append(trade)
+
+                        # Controllo SHORT
+                        elif trade['type'] == 'SHORT':
+                            # Requisito Break-Even
+                            if not trade['be_notified'] and current_price <= (trade['entry'] - trade['risk']):
+                                send_telegram_message(
+                                    f"🛡️ **AGGIORNAMENTO TRADE SHORT ({SYMBOL})**\n\n"
+                                    f"Il prezzo ha raggiunto +1R (`{current_price}`)!\n"
+                                    f"💡 **Consiglio:** Sposta lo Stop Loss a B/E (Break-Even) a `{trade['entry']}` per azzerare il rischio!"
+                                )
+                                trade['be_notified'] = True
+
+                            # Take Profit
+                            if current_price <= trade['tp']:
+                                send_telegram_message(
+                                    f"🎉 **TAKE PROFIT COLPITO! (WIN)** 🎉\n\n"
+                                    f"🌐 **Strumento:** {SYMBOL}\n"
+                                    f"📊 **Tipo:** SHORT\n"
+                                    f"🎯 **Profit Target:** `{trade['tp']}`\n"
+                                    f"🚀 **Esito:** Operazione chiusa in PROFITTO!"
+                                )
+                                trades_to_remove.append(trade)
+
+                            # Stop Loss
+                            elif current_price >= trade['sl']:
+                                send_telegram_message(
+                                    f"🛑 **STOP LOSS COLPITO (LOSS)** 🛑\n\n"
+                                    f"🌐 **Strumento:** {SYMBOL}\n"
+                                    f"📊 **Tipo:** SHORT\n"
+                                    f"🛑 **Prezzo Uscita:** `{trade['sl']}`"
+                                )
+                                trades_to_remove.append(trade)
+
+                    for t in trades_to_remove:
+                        if t in active_trades:
+                            active_trades.remove(t)
+
+        except Exception as e:
+            print(f"Errore nel monitoraggio trade: {e}")
+
+        time.sleep(15)  # Controlla ogni 15 secondi
+
 # --------------------------------------------------
 # LOGICA DI TRADING: LIQUIDITY SWEEP & EMA FILTER
 # --------------------------------------------------
 def analyze_scalp():
-    global last_signal_time
+    global last_signal_time, active_trades
 
     candles = get_market_data()
     if not candles or len(candles) < LOOKBACK + 2:
@@ -73,23 +165,34 @@ def analyze_scalp():
 
     # Ultima candela chiusa (index -2)
     last_candle = candles[-2]
-    # Candele precedenti per identificare High e Low
     prev_candles = candles[-(LOOKBACK + 2):-2]
 
     time_str = last_candle['datetime']
     if last_signal_time == time_str:
-        return # Evita segnali duplicati sulla stessa candela
+        return
+
+    # Converti orario in fuso orario di Roma (Europe/Rome)
+    try:
+        dt_utc = datetime.datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=pytz.utc)
+        rome_tz = pytz.timezone("Europe/Rome")
+        rome_dt = dt_utc.astimezone(rome_tz)
+        formatted_time = rome_dt.strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        rome_dt = datetime.datetime.now(pytz.timezone("Europe/Rome"))
+        formatted_time = time_str
+
+    # Filtro Orario Attivo
+    if not is_trading_hours(rome_dt):
+        return
 
     high_p = float(last_candle['high'])
     low_p = float(last_candle['low'])
     close_p = float(last_candle['close'])
     open_p = float(last_candle['open'])
 
-    # Indicatore EMA 200 e ATR
     ema_200 = float(last_candle.get('ema', close_p))
     atr = float(last_candle.get('atr', 1.20))
 
-    # Calcolo swing highs e lows recenti
     recent_high = max(float(c['high']) for c in prev_candles)
     recent_low = min(float(c['low']) for c in prev_candles)
 
@@ -100,15 +203,7 @@ def analyze_scalp():
     lower_wick = min(open_p, close_p) - low_p
     upper_wick = high_p - max(open_p, close_p)
 
-    # Converti orario in fuso orario di Roma (Europe/Rome)
-    try:
-        dt_utc = datetime.datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=pytz.utc)
-        rome_tz = pytz.timezone("Europe/Rome")
-        formatted_time = dt_utc.astimezone(rome_tz).strftime("%Y-%m-%d %H:%M:%S")
-    except Exception:
-        formatted_time = time_str
-
-    # --- CONDIZIONI LONG (SWEEP LOW + WICK RIALZISTA + SOPRA EMA 200) ---
+    # --- CONDIZIONI LONG ---
     is_low_sweep = low_p < recent_low
     is_bullish_rejection = (lower_wick / range_size) > 0.45 and close_p > low_p
 
@@ -118,6 +213,15 @@ def analyze_scalp():
         sl = round(low_p - (1.5 * atr), 2)
         risk = round(close_p - sl, 2)
         tp = round(close_p + (risk * 2), 2)
+
+        active_trades.append({
+            'type': 'LONG',
+            'entry': close_p,
+            'sl': sl,
+            'tp': tp,
+            'risk': risk,
+            'be_notified': False
+        })
 
         msg = (
             f"⚡ **SCALPER BOT 5M - SEGNALE BUY** ⚡\n\n"
@@ -129,10 +233,10 @@ def analyze_scalp():
             f"⏰ **Orario:** {formatted_time}"
         )
         send_telegram_message(msg)
-        print(f"[{datetime.datetime.now()}] BUY Scalp inviato!")
+        print(f"[{datetime.datetime.now()}] BUY Scalp inviato e messo in monitoraggio!")
         return
 
-    # --- CONDIZIONI SHORT (SWEEP HIGH + WICK RIBASSISTA + SOTTO EMA 200) ---
+    # --- CONDIZIONI SHORT ---
     is_high_sweep = high_p > recent_high
     is_bearish_rejection = (upper_wick / range_size) > 0.45 and close_p < high_p
 
@@ -142,6 +246,15 @@ def analyze_scalp():
         sl = round(high_p + (1.5 * atr), 2)
         risk = round(sl - close_p, 2)
         tp = round(close_p - (risk * 2), 2)
+
+        active_trades.append({
+            'type': 'SHORT',
+            'entry': close_p,
+            'sl': sl,
+            'tp': tp,
+            'risk': risk,
+            'be_notified': False
+        })
 
         msg = (
             f"⚡ **SCALPER BOT 5M - SEGNALE SELL** ⚡\n\n"
@@ -153,7 +266,7 @@ def analyze_scalp():
             f"⏰ **Orario:** {formatted_time}"
         )
         send_telegram_message(msg)
-        print(f"[{datetime.datetime.now()}] SELL Scalp inviato!")
+        print(f"[{datetime.datetime.now()}] SELL Scalp inviato e messo in monitoraggio!")
         return
 
 # --------------------------------------------------
@@ -161,11 +274,16 @@ def analyze_scalp():
 # --------------------------------------------------
 if __name__ == '__main__':
     # Avvia Flask in un thread separato
-    t = Thread(target=run_flask)
-    t.daemon = True
-    t.start()
+    t_flask = Thread(target=run_flask)
+    t_flask.daemon = True
+    t_flask.start()
 
-    send_telegram_message("⚡ Gold Scalper Bot (5M Liquidity Sweep + EMA) Avviato e Attivo! 🚀")
+    # Avvia il Monitor dei Trade Attivi in un thread separato
+    t_monitor = Thread(target=monitor_active_trades)
+    t_monitor.daemon = True
+    t_monitor.start()
+
+    send_telegram_message("⚡ Gold Scalper Bot PRO (5M Sweep + EMA + BE & Win Tracker) Avviato! 🚀")
 
     while True:
         try:
