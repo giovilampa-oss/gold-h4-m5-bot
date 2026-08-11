@@ -1,6 +1,7 @@
 import os
 import time
 import datetime
+import pytz
 import requests
 from threading import Thread
 from flask import Flask
@@ -80,7 +81,8 @@ def analyze_scalp():
     low_p = float(last_candle['low'])
     close_p = float(last_candle['close'])
     time_str = last_candle['datetime']
-
+    tz = pytz.timezone('Europe/Rome')
+    formatted_time = datetime.datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
     # Evita segnali duplicati sulla stessa candela
     if last_signal_time == time_str:
         return
@@ -116,8 +118,7 @@ def analyze_scalp():
             f"💵 **Prezzo Entrata:** `{close_p}`\n"
             f"🛑 **Stop Loss:** `{sl}`\n"
             f"🎯 **Take Profit:** `{tp}`\n"
-            f"⏰ **Orario:** {time_str}"
-        )
+            f"⏰ **Orario:** {formatted_time}")
         send_telegram_message(msg)
         print(f"[{datetime.datetime.now()}] BUY Scalp inviato!")
         return
@@ -138,7 +139,7 @@ def analyze_scalp():
             f"💵 **Prezzo Entrata:** `{close_p}`\n"
             f"🛑 **Stop Loss:** `{sl}`\n"
             f"🎯 **Take Profit:** `{tp}`\n"
-            f"⏰ **Orario:** {time_str}"
+            f"⏰ **Orario:** {formatted_time}"
         )
         send_telegram_message(msg)
         print(f"[{datetime.datetime.now()}] SELL Scalp inviato!")
