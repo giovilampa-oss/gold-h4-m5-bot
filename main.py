@@ -47,10 +47,9 @@ def send_telegram_message(message):
         requests.post(url, json=payload, timeout=10)
     except Exception as e:
         print(f"Errore invio Telegram: {e}")
-
 def get_market_data():
-    """Recupera le candele da Twelve Data"""
-    url = f"https://api.twelvedata.com/time_series?symbol={SYMBOL}&interval={TIMEFRAME}&outputsize=30&apikey={TWELVE_DATA_KEY}"
+    """Recupera le candele e l'ATR da Twelve Data"""
+    url = f"https://api.twelvedata.com/time_series?symbol={SYMBOL}&interval={TIMEFRAME}&outputsize=30&apikey={TWELVE_DATA_KEY}&indicators=atr(timeperiod=14)"
     try:
         res = requests.get(url, timeout=10).json()
         if "values" in res:
@@ -108,11 +107,12 @@ def analyze_scalp():
 
     if is_low_sweep and is_bullish_rejection:
         last_signal_time = time_str
-        sl = round(low_p - 0.80, 2)            # Stop Loss stretto ($0.80)
-        tp = round(close_p + (close_p - sl) * 1.5, 2) # Risk/Reward 1:1.5
-
+        atr = float(last_candle.get('atr', 1.20))
+        sl = round(low_p - (1.5 * atr), 2)
+        risk = round(close_p - sl, 2)
+        tp = round(close_p + (risk * 2), 2)
         msg = (
-            f"⚡ **SCALPER BOT 1M - SEGNALE BUY** ⚡\n\n"
+            f"⚡ **SCALPER BOT 5M - SEGNALE BUY** ⚡\n\n"
             f"🪙 **Strumento:** {SYMBOL}\n"
             f"📊 **Tipo:** LONG (Sweep Liquidità Minimi)\n"
             f"💵 **Prezzo Entrata:** `{close_p}`\n"
@@ -129,11 +129,12 @@ def analyze_scalp():
 
     if is_high_sweep and is_bearish_rejection:
         last_signal_time = time_str
-        sl = round(high_p + 0.80, 2)            # Stop Loss stretto ($0.80)
-        tp = round(close_p - (sl - close_p) * 1.5, 2) # Risk/Reward 1:1.5
-
+        atr = float(last_candle.get('atr', 1.20))
+        sl = round(high_p + (1.5 * atr), 2)
+        risk = round(sl - close_p, 2)
+        tp = round(close_p - (risk * 2), 2)
         msg = (
-            f"⚡ **SCALPER BOT 1M - SEGNALE SELL** ⚡\n\n"
+            f"⚡ **SCALPER BOT 5M - SEGNALE SELL** ⚡\n\n"
             f"🪙 **Strumento:** {SYMBOL}\n"
             f"📊 **Tipo:** SHORT (Sweep Liquidità Massimi)\n"
             f"💵 **Prezzo Entrata:** `{close_p}`\n"
