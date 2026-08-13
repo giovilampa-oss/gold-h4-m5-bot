@@ -74,8 +74,8 @@ if __name__ == "__main__":
     t.daemon = True  
     t.start()  
       
-    print("Gold Scalper Bot avviato in modalità autonoma.")  
-      
+    print("Gold Scalper Bot avviato in modalità autonoma.")
+  send_telegram_message("Test: il bot è online e operativo!")      
     while True:  
         try:  
             trading_strategy()  
