@@ -1,6 +1,20 @@
 import time
 import requests
 import os
+from threading import Thread
+from flask import Flask
+
+# --- MINI-SERVER PER MANTENERE APERTA LA PORTA SU RENDER ---
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Gold Scalper Bot is running!", 200
+
+def run_web():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
+# -----------------------------------------------------------
 
 # Configurazioni Telegram (prelevate in automatico da Render)
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
@@ -48,7 +62,13 @@ def gold_scalper_strategy():
 
 # Ciclo continuo 24/7 in background
 if __name__ == "__main__":
-    print("Gold Scalper Bot avviato in modalità autonoma.")
+    # Avvia il mini-server Flask in un thread separato per tenere aperta la porta
+    t = Thread(target=run_web)
+    t.daemon = True
+    t.start()
+    
+    print("Gold Scalper Bot avviato in modalità autonoma con supporto Web.")
+    
     while True:
         try:
             gold_scalper_strategy()
