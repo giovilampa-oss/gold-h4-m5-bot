@@ -18,22 +18,20 @@ def run_web():
 # --- Configurazione Telegram ---  
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")  
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")  
-def send_telegram_message(message):
+ def send_telegram_message(message):
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
         print("Errore: Token o Chat ID Telegram non configurati!")
         return
-
- url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"  
- payload = {  
- "chat_id": TELEGRAM_CHAT_ID,  
- "text": message,  
- "parse_mode": "Markdown"  
- }  
- try:  
- requests.post(url, json=payload)  
- except Exception as e:  
- print(f"Errore nell'invio del messaggio Telegram: {e}")  
-  
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": message,
+        "parse_mode": "Markdown"
+    }
+    try:
+        requests.post(url, json=payload)
+    except Exception as e:
+        print(f"Errore nell'invio del messaggio Telegram: {e}")  
 # --- LOGICA ALGORITMICA DI TRADING (Liquidity Sweep) ---  
 def analizza_mercato():  
     """
