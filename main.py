@@ -173,5 +173,4 @@ if __name__ == "__main__":
     t = Thread(target=run_flask)
     t.daemon = True
     t.start()
-
     main_loop()
