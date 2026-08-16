@@ -13,7 +13,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Gold Scalper Bot (Liquidity Sweep + EMA Filter) is running live!"
+    return "Gold Scalper Bot (1M/3M Liquidity Sweep) is running live!"
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
@@ -27,9 +27,9 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "TUO_CHAT_ID")
 TWELVE_DATA_KEY = os.environ.get("TWELVE_DATA_KEY", "fa500c91581d4b4685dd1040f541ac8e")
 
 SYMBOL = "XAU/USD"
-TIMEFRAME = "1min"      
-LOOKBACK = 12           
-CHECK_INTERVAL = 60     
+TIMEFRAME = "1min"      # Timeframe 1 Minuto per Scalping
+LOOKBACK = 12          # Candele per identificare il range recente
+CHECK_INTERVAL = 60    # Controllo ogni 60 secondi
 
 last_signal_time = None
 
@@ -47,10 +47,9 @@ def send_telegram_message(message):
         requests.post(url, json=payload, timeout=10)
     except Exception as e:
         print(f"Errore invio Telegram: {e}")
-
 def get_market_data():
-    """Recupera le candele, l'ATR e l'EMA da Twelve Data"""
-    url = f"https://api.twelvedata.com/time_series?symbol={SYMBOL}&interval={TIMEFRAME}&outputsize=50&apikey={TWELVE_DATA_KEY}&indicators=atr(timeperiod=14),ema(timeperiod=50)"
+    """Recupera le candele e l'ATR da Twelve Data"""
+    url = f"https://api.twelvedata.com/time_series?symbol={SYMBOL}&interval={TIMEFRAME}&outputsize=30&apikey={TWELVE_DATA_KEY}&indicators=atr(timeperiod=14)"
     try:
         res = requests.get(url, timeout=10).json()
         if "values" in res:
@@ -62,7 +61,7 @@ def get_market_data():
     return None
 
 # ---------------------------------------------------------
-# LOGICA DI TRADING: LIQUIDITY SWEEP + EMA FILTER
+# LOGICA DI TRADING: LIQUIDITY SWEEP & REJECTION
 # ---------------------------------------------------------
 def analyze_scalp():
     global last_signal_time
@@ -73,6 +72,7 @@ def analyze_scalp():
 
     # Ultima candela chiusa (index -2)
     last_candle = candles[-2]
+    # Candele precedenti per identificare High e Low
     past_candles = candles[-(LOOKBACK+2):-2]
 
     open_p = float(last_candle['open'])
@@ -80,18 +80,13 @@ def analyze_scalp():
     low_p = float(last_candle['low'])
     close_p = float(last_candle['close'])
     time_str = last_candle['datetime']
-    
-    # Valore dell'EMA a 50 calcolato da Twelve Data sulla candela
-    ema_val = float(last_candle.get('ema', close_p))
-
     tz = pytz.timezone('Europe/Rome')
     formatted_time = datetime.datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
-
     # Evita segnali duplicati sulla stessa candela
     if last_signal_time == time_str:
         return
 
-    # Massimo e minimo del range recente
+    # Trova il massimo e minimo del range precedente
     past_highs = [float(c['high']) for c in past_candles]
     past_lows = [float(c['low']) for c in past_candles]
     
@@ -102,65 +97,61 @@ def analyze_scalp():
     if range_size == 0:
         return
 
+    # Calcolo dell'ombra (Wick)
     upper_wick = high_p - max(open_p, close_p)
     lower_wick = min(open_p, close_p) - low_p
 
-    # --- CONDIZIONI LONG (SWEEP LOW + WICK RIALZISTA + TREND RIALZISTA SOPRA EMA) ---
+    # --- CONDIZIONI LONG (SWEEP LOW + WICK RIALZISTA) ---
     is_low_sweep = low_p < recent_low
     is_bullish_rejection = (lower_wick / range_size) > 0.45 and close_p > low_p
-    is_above_ema = close_p > ema_val  # Filtro trend: compriamo solo se siamo sopra l'EMA
 
-    if is_low_sweep and is_bullish_rejection and is_above_ema:
+    if is_low_sweep and is_bullish_rejection:
         last_signal_time = time_str
         atr = float(last_candle.get('atr', 1.20))
         sl = round(low_p - (1.5 * atr), 2)
         risk = round(close_p - sl, 2)
         tp = round(close_p + (risk * 2), 2)
         msg = (
-            f"⚡ **SCALPER BOT 1M - SEGNALE BUY (Filtro EMA attivo)** ⚡\n\n"
+            f"⚡ **SCALPER BOT 5M - SEGNALE BUY** ⚡\n\n"
             f"🪙 **Strumento:** {SYMBOL}\n"
-            f"📊 **Tipo:** LONG (Sweep Minimi + Trend OK)\n"
+            f"📊 **Tipo:** LONG (Sweep Liquidità Minimi)\n"
             f"💵 **Prezzo Entrata:** `{close_p}`\n"
             f"🛑 **Stop Loss:** `{sl}`\n"
             f"🎯 **Take Profit:** `{tp}`\n"
-            f"📈 **EMA 50:** `{ema_val}`\n"
-            f"⏰ **Orario:** {formatted_time}"
-        )
+            f"⏰ **Orario:** {formatted_time}")
         send_telegram_message(msg)
-        print(f"[{datetime.datetime.now()}] BUY Scalp filtrato da EMA inviato!")
+        print(f"[{datetime.datetime.now()}] BUY Scalp inviato!")
         return
 
-    # --- CONDIZIONI SHORT (SWEEP HIGH + WICK RIBASSISTA + TREND RIBASSISTA SOTTO EMA) ---
+    # --- CONDIZIONI SHORT (SWEEP HIGH + WICK RIBASSISTA) ---
     is_high_sweep = high_p > recent_high
     is_bearish_rejection = (upper_wick / range_size) > 0.45 and close_p < high_p
-    is_below_ema = close_p < ema_val  # Filtro trend: vendiamo solo se siamo sotto l'EMA
 
-    if is_high_sweep and is_bearish_rejection and is_below_ema:
+    if is_high_sweep and is_bearish_rejection:
         last_signal_time = time_str
         atr = float(last_candle.get('atr', 1.20))
         sl = round(high_p + (1.5 * atr), 2)
         risk = round(sl - close_p, 2)
         tp = round(close_p - (risk * 2), 2)
         msg = (
-            f"⚡ **SCALPER BOT 1M - SEGNALE SELL (Filtro EMA attivo)** ⚡\n\n"
+            f"⚡ **SCALPER BOT 5M - SEGNALE SELL** ⚡\n\n"
             f"🪙 **Strumento:** {SYMBOL}\n"
-            f"📊 **Tipo:** SHORT (Sweep Massimi + Trend OK)\n"
+            f"📊 **Tipo:** SHORT (Sweep Liquidità Massimi)\n"
             f"💵 **Prezzo Entrata:** `{close_p}`\n"
             f"🛑 **Stop Loss:** `{sl}`\n"
             f"🎯 **Take Profit:** `{tp}`\n"
-            f"📈 **EMA 50:** `{ema_val}`\n"
             f"⏰ **Orario:** {formatted_time}"
         )
         send_telegram_message(msg)
-        print(f"[{datetime.datetime.now()}] SELL Scalp filtrato da EMA inviato!")
+        print(f"[{datetime.datetime.now()}] SELL Scalp inviato!")
         return
 
 # ---------------------------------------------------------
 # LOOP PRINCIPALE
 # ---------------------------------------------------------
 def main_loop():
-    print("🚀 Gold Scalper Bot (1M + EMA Filter) Avviato!")
-    send_telegram_message("⚡ **Gold Scalper Bot (Liquidity Sweep + Filtro EMA) Avviato e Attivo!** 🚀")
+    print("🚀 Gold Scalper Bot (1M) Avviato!")
+    send_telegram_message("⚡ **Gold Scalper Bot (1M Liquidity Sweep) Avviato e Attivo!** 🚀")
     
     while True:
         try:
@@ -173,4 +164,5 @@ if __name__ == "__main__":
     t = Thread(target=run_flask)
     t.daemon = True
     t.start()
+
     main_loop()
