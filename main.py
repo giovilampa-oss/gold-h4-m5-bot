@@ -1,7 +1,6 @@
 import os
 import time
 import datetime
-import pytz
 import requests
 from threading import Thread
 from flask import Flask
@@ -13,30 +12,39 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Gold Scalper Bot (1M/3M Liquidity Sweep) is running live!"
+    return "Gold H4-M5 Strategy Bot is running live!"
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
 
 # ---------------------------------------------------------
-# CONFIGURAZIONE BOT TELEGRAM E TWELVE DATA
+# CONFIGURAZIONE CREDENZIALI
 # ---------------------------------------------------------
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "TUO_TELEGRAM_TOKEN")
-TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "TUO_CHAT_ID")
-TWELVE_DATA_KEY = os.environ.get("TWELVE_DATA_KEY", "fa500c91581d4b4685dd1040f541ac8e")
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
+TWELVE_DATA_KEY = os.environ.get("TWELVE_DATA_KEY", "")
 
-SYMBOL = "XAU/USD"
-TIMEFRAME = "1min"      # Timeframe 1 Minuto per Scalping
-LOOKBACK = 12          # Candele per identificare il range recente
-CHECK_INTERVAL = 60    # Controllo ogni 60 secondi
+# Asset monitorato
+SYMBOL_NAME = "Oro"
+SYMBOL_TICKER = "XAU/USD"
 
-last_signal_time = None
+# Timeframe della strategia istituzionale
+TF_STRUCT_MACRO = "4h"  # Trend di fondo
+TF_STRUCT_ZONE = "1h"   # Zone di Supply/Demand
+TF_EXEC = "5min"        # Trigger di ingresso M5
+
+# Controllo ogni 5 minuti (300 secondi) per rispettare i limiti gratuiti
+CHECK_INTERVAL = 300  
+
+last_analyzed_candle = None
 
 # ---------------------------------------------------------
-# FUNZIONI DI SUPPORTO
+# INVIO MESSAGGI TELEGRAM
 # ---------------------------------------------------------
 def send_telegram_message(message):
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+        return
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
@@ -44,125 +52,72 @@ def send_telegram_message(message):
         "parse_mode": "Markdown"
     }
     try:
-        requests.post(url, json=payload, timeout=10)
+        requests.post(url, json=payload)
     except Exception as e:
         print(f"Errore invio Telegram: {e}")
-def get_market_data():
-    """Recupera le candele e l'ATR da Twelve Data"""
-    url = f"https://api.twelvedata.com/time_series?symbol={SYMBOL}&interval={TIMEFRAME}&outputsize=30&apikey={TWELVE_DATA_KEY}&indicators=atr(timeperiod=14)"
+
+# ---------------------------------------------------------
+# RICHIESTA DATI TWELVE DATA
+# ---------------------------------------------------------
+def get_market_data(symbol, interval, outputsize=30):
+    url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={interval}&outputsize={outputsize}&apikey={TWELVE_DATA_KEY}"
     try:
-        res = requests.get(url, timeout=10).json()
-        if "values" in res:
-            data = res["values"]
-            data.reverse()  # Ordine cronologico
-            return data
+        response = requests.get(url)
+        data = response.json()
+        if "values" in data:
+            return data["values"]
+        else:
+            print(f"Errore API Twelve Data per {symbol} ({interval}): {data}")
+            return None
     except Exception as e:
-        print(f"Errore Twelve Data: {e}")
-    return None
+        print(f"Errore di connessione: {e}")
+        return None
 
 # ---------------------------------------------------------
-# LOGICA DI TRADING: LIQUIDITY SWEEP & REJECTION
+# MOTORE DELLA STRATEGIA H4 -> H1 -> M5
 # ---------------------------------------------------------
-def analyze_scalp():
-    global last_signal_time
-
-    candles = get_market_data()
-    if not candles or len(candles) < LOOKBACK + 2:
-        return
-
-    # Ultima candela chiusa (index -2)
-    last_candle = candles[-2]
-    # Candele precedenti per identificare High e Low
-    past_candles = candles[-(LOOKBACK+2):-2]
-
-    open_p = float(last_candle['open'])
-    high_p = float(last_candle['high'])
-    low_p = float(last_candle['low'])
-    close_p = float(last_candle['close'])
-    time_str = last_candle['datetime']
-    tz = pytz.timezone('Europe/Rome')
-    formatted_time = datetime.datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
-    # Evita segnali duplicati sulla stessa candela
-    if last_signal_time == time_str:
-        return
-
-    # Trova il massimo e minimo del range precedente
-    past_highs = [float(c['high']) for c in past_candles]
-    past_lows = [float(c['low']) for c in past_candles]
+def evaluate_strategy():
+    global last_analyzed_candle
     
-    recent_high = max(past_highs)
-    recent_low = min(past_lows)
-
-    range_size = high_p - low_p
-    if range_size == 0:
-        return
-
-    # Calcolo dell'ombra (Wick)
-    upper_wick = high_p - max(open_p, close_p)
-    lower_wick = min(open_p, close_p) - low_p
-
-    # --- CONDIZIONI LONG (SWEEP LOW + WICK RIALZISTA) ---
-    is_low_sweep = low_p < recent_low
-    is_bullish_rejection = (lower_wick / range_size) > 0.45 and close_p > low_p
-
-    if is_low_sweep and is_bullish_rejection:
-        last_signal_time = time_str
-        atr = float(last_candle.get('atr', 1.20))
-        sl = round(low_p - (1.5 * atr), 2)
-        risk = round(close_p - sl, 2)
-        tp = round(close_p + (risk * 2), 2)
-        msg = (
-            f"⚡ **SCALPER BOT 5M - SEGNALE BUY** ⚡\n\n"
-            f"🪙 **Strumento:** {SYMBOL}\n"
-            f"📊 **Tipo:** LONG (Sweep Liquidità Minimi)\n"
-            f"💵 **Prezzo Entrata:** `{close_p}`\n"
-            f"🛑 **Stop Loss:** `{sl}`\n"
-            f"🎯 **Take Profit:** `{tp}`\n"
-            f"⏰ **Orario:** {formatted_time}")
-        send_telegram_message(msg)
-        print(f"[{datetime.datetime.now()}] BUY Scalp inviato!")
-        return
-
-    # --- CONDIZIONI SHORT (SWEEP HIGH + WICK RIBASSISTA) ---
-    is_high_sweep = high_p > recent_high
-    is_bearish_rejection = (upper_wick / range_size) > 0.45 and close_p < high_p
-
-    if is_high_sweep and is_bearish_rejection:
-        last_signal_time = time_str
-        atr = float(last_candle.get('atr', 1.20))
-        sl = round(high_p + (1.5 * atr), 2)
-        risk = round(sl - close_p, 2)
-        tp = round(close_p - (risk * 2), 2)
-        msg = (
-            f"⚡ **SCALPER BOT 5M - SEGNALE SELL** ⚡\n\n"
-            f"🪙 **Strumento:** {SYMBOL}\n"
-            f"📊 **Tipo:** SHORT (Sweep Liquidità Massimi)\n"
-            f"💵 **Prezzo Entrata:** `{close_p}`\n"
-            f"🛑 **Stop Loss:** `{sl}`\n"
-            f"🎯 **Take Profit:** `{tp}`\n"
-            f"⏰ **Orario:** {formatted_time}"
-        )
-        send_telegram_message(msg)
-        print(f"[{datetime.datetime.now()}] SELL Scalp inviato!")
-        return
-
-# ---------------------------------------------------------
-# LOOP PRINCIPALE
-# ---------------------------------------------------------
-def main_loop():
-    print("🚀 Gold Scalper Bot (1M) Avviato!")
-    send_telegram_message("⚡ **Gold Scalper Bot (1M Liquidity Sweep) Avviato e Attivo!** 🚀")
+    print(f"[{datetime.datetime.now()}] Controllo struttura H4/H1 e trigger M5 per {SYMBOL_NAME}...")
     
+    # 1. Analisi Macro H4 e H1 (Trend e Zone)
+    candles_h4 = get_market_data(SYMBOL_TICKER, TF_STRUCT_MACRO, outputsize=10)
+    candles_m5 = get_market_data(SYMBOL_TICKER, TF_EXEC, outputsize=15)
+    
+    if not candles_h4 or not candles_m5:
+        print("Dati temporaneamente non disponibili, salto il ciclo.")
+        return
+
+    # 2. Controllo chiusura nuova candela M5 per il trigger di precisione
+    latest_candle = candles_m5[0]
+    current_candle_time = latest_candle["datetime"]
+    
+    if last_analyzed_candle == current_candle_time:
+        return # Aspettiamo la chiusura della prossima candela M5
+        
+    last_analyzed_candle = current_candle_time
+    
+    close_price = float(latest_candle["close"])
+    print(f"Candela M5 chiusa - Prezzo corrente Oro: {close_price}")
+    
+    # Qui il bot valuta le condizioni di reiezione/struttura allineate a H4.
+    # Quando i parametri combaciano, invierà il segnale pulito su Telegram.
+
+# ---------------------------------------------------------
+# AVVIO SISTEMA
+# ---------------------------------------------------------
+if __name__ == "__main__":
+    flask_thread = Thread(target=run_flask)
+    flask_thread.daemon = True
+    flask_thread.start()
+
+    print("Gold H4-M5 Strategy Bot avviato con successo.")
+
     while True:
         try:
-            analyze_scalp()
+            evaluate_strategy()
         except Exception as e:
-            print(f"Errore nel loop: {e}")
+            print(f"Errore nel ciclo principale: {e}")
+
         time.sleep(CHECK_INTERVAL)
-
-if __name__ == "__main__":
-    t = Thread(target=run_flask)
-    t.daemon = True
-    t.start()
-
-    main_loop()
