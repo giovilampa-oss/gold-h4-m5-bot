@@ -52,11 +52,11 @@ def send_telegram_message(message):
         "text": message,
         "parse_mode": "Markdown"
     }
-       try:
-            response = requests.post(url, json=payload)
-            print(f"Risposta Telegram: {response.status_code} - {response.text}")
-        except Exception as e:
-            print(f"Errore invio Telegram: {e}")
+    try:
+        response = requests.post(url, json=payload)
+        print(f"Risposta Telegram: {response.status_code} - {response.text}")
+    except Exception as e:
+         print(f"Errore invio Telegram: {e}")
 # ---------------------------------------------------------
 # RICHIESTA DATI TWELVE DATA
 # ---------------------------------------------------------
