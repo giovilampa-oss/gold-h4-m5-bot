@@ -25,17 +25,17 @@ TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 TWELVE_DATA_KEY = os.environ.get("TWELVE_DATA_KEY", "")
 if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
-        url_avvio = f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage'
-        payload = {
-            'chat_id': TELEGRAM_CHAT_ID,
-            'text': '🚀 Bot H4-M5 avviato con successo!',
-        }
-        try:
-            requests.post(url_avvio, json=payload)
-        except Exception as e:
-            print('Errore invio messaggio di avvio:', e)
-SYMBOL_NAME = "Oro"
-SYMBOL_TICKER = "XAU/USD"
+      url_avvio = f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage'
+payload = {
+    'chat_id': TELEGRAM_CHAT_ID,
+    'text': '🚀 Bot H4-M5 avviato con successo!',
+}
+try:
+    response = requests.post(url_avvio, json=payload)
+    print('Risposta Telegram:', response.status_code, response.text)
+except Exception as e:
+    print('Errore invio messaggio di avvio:', e)
+    SYMBOL_TICKER = "XAU/USD"
 
 # Timeframe della strategia istituzionale
 TF_STRUCT_MACRO = "4h"  # Trend di fondo
