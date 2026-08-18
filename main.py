@@ -42,8 +42,9 @@ last_analyzed_candle = None
 # ---------------------------------------------------------
 # INVIO MESSAGGI TELEGRAM
 # ---------------------------------------------------------
-def send_telegram_message(message):
+ def send_telegram_message(message):
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+        print("Token o Chat ID mancanti!")
         return
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {
@@ -52,10 +53,9 @@ def send_telegram_message(message):
         "parse_mode": "Markdown"
     }
     try:
-        requests.post(url, json=payload)
+        response = requests.post(url, json=payload)
+        print(f"Risposta Telegram: {response.status_code} - {response.text}")
     except Exception as e:
-        print(f"Errore invio Telegram: {e}")
-
 # ---------------------------------------------------------
 # RICHIESTA DATI TWELVE DATA
 # ---------------------------------------------------------
