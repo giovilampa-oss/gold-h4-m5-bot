@@ -24,8 +24,7 @@ def run_flask():
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 TWELVE_DATA_KEY = os.environ.get("TWELVE_DATA_KEY", "")
-
-    if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
+if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
         url_avvio = f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage'
         payload = {
             'chat_id': TELEGRAM_CHAT_ID,
