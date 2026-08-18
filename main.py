@@ -114,11 +114,11 @@ if __name__ == "__main__":
     flask_thread.start()
 
     print("Gold H4-M5 Strategy Bot avviato con successo.")
-send_telegram_message("🤖 Gold SMC Bot avviato con successo e in monitoraggio su XAUUSD.")
-while True:
+    send_telegram_message("🤖 Gold SMC Bot avviato con successo e in monitoraggio su XAUUSD.")
+
+  while True:
         try:
             evaluate_strategy()
         except Exception as e:
             print(f"Errore nel ciclo principale: {e}")
-
         time.sleep(CHECK_INTERVAL)
