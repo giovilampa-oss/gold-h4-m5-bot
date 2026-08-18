@@ -110,6 +110,7 @@ if __name__ == "__main__":
     flask_thread.start()
 
     print("Gold H4-M5 Strategy Bot avviato con successo.")
+    send_telegram_message("Test invio forzato")
     send_telegram_message("🤖 Gold SMC Bot avviato con successo e in monitoraggio su XAUUSD.")
 
     while True:
