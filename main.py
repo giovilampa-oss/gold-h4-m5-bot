@@ -116,7 +116,7 @@ if __name__ == "__main__":
     print("Gold H4-M5 Strategy Bot avviato con successo.")
     send_telegram_message("🤖 Gold SMC Bot avviato con successo e in monitoraggio su XAUUSD.")
 
-  while True:
+    while True:
         try:
             evaluate_strategy()
         except Exception as e:
