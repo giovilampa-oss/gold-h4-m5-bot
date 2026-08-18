@@ -42,7 +42,7 @@ last_analyzed_candle = None
 # ---------------------------------------------------------
 # INVIO MESSAGGI TELEGRAM
 # ---------------------------------------------------------
- def send_telegram_message(message):
+def send_telegram_message(message):
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
         print("Token o Chat ID mancanti!")
         return
