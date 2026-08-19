@@ -88,6 +88,7 @@ def evaluate_strategy():
     
     # 1. Analisi Macro H4 e H1 (Trend e Zone)
     candles_h4 = get_market_data(SYMBOL_TICKER, TF_STRUCT_MACRO, outputsize=10)
+    time.sleep(5)
     candles_m5 = get_market_data(SYMBOL_TICKER, TF_EXEC, outputsize=15)
     
     if not candles_h4 or not candles_m5:
